@@ -29,11 +29,13 @@ import android.net.Uri;
 import android.opengl.GLES10;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.provider.MediaStore;
 import android.view.View;
 import android.view.Window;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -68,13 +70,20 @@ public class CropImageActivity extends MonitoredActivity {
     private CropImageView imageView;
     private HighlightView cropView;
 
+    private boolean willOverrideView;
+
+    protected void setWillOverrideView(boolean willOverrideView) {
+        this.willOverrideView = willOverrideView;
+    }
+
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(R.layout.crop__activity_crop);
-        initViews();
+    }
 
+    protected void finishOnCreate() {
         setupFromIntent();
         if (rotateBitmap == null) {
             finish();
@@ -83,7 +92,22 @@ public class CropImageActivity extends MonitoredActivity {
         startCrop();
     }
 
-    private void initViews() {
+    @Override
+    public void setContentView(int layoutResID) {
+        super.setContentView(layoutResID);
+        if(!willOverrideView){
+            initActionViews();
+            initImageView();
+            finishOnCreate();
+        }
+    }
+
+    protected void initImageView(CropImageView cropImageView) {
+        this.imageView = cropImageView;
+        initImageView();
+    }
+
+    protected void initImageView() {
         imageView = (CropImageView) findViewById(R.id.crop_image);
         imageView.context = this;
         imageView.setRecycler(new ImageViewTouchBase.Recycler() {
@@ -93,7 +117,9 @@ public class CropImageActivity extends MonitoredActivity {
                 System.gc();
             }
         });
+    }
 
+    private void initActionViews() {
         findViewById(R.id.btn_cancel).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 setResult(RESULT_CANCELED);
@@ -118,6 +144,7 @@ public class CropImageActivity extends MonitoredActivity {
             maxX = extras.getInt(Crop.Extra.MAX_X);
             maxY = extras.getInt(Crop.Extra.MAX_Y);
             saveUri = extras.getParcelable(MediaStore.EXTRA_OUTPUT);
+
         }
 
         sourceUri = intent.getData();
@@ -254,12 +281,17 @@ public class CropImageActivity extends MonitoredActivity {
         }
     }
 
+    protected void onCancelClicked() {
+        setResult(RESULT_CANCELED);
+        finish();
+    }
+
     /*
      * TODO
      * This should use the decode/crop/encode single step API so that the whole
      * (possibly large) Bitmap doesn't need to be read into memory
      */
-    private void onSaveClicked() {
+    protected void onSaveClicked() {
         if (cropView == null || isSaving) {
             return;
         }
@@ -414,6 +446,7 @@ public class CropImageActivity extends MonitoredActivity {
             } catch (IOException e) {
                 setResultException(e);
                 Log.e("Cannot open file: " + saveUri, e);
+
             } finally {
                 CropUtil.closeSilently(outputStream);
             }
