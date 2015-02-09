@@ -36,9 +36,13 @@ import android.view.View;
 import android.view.Window;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 
 /*
@@ -49,6 +53,8 @@ public class CropImageActivity extends MonitoredActivity {
     private static final boolean IN_MEMORY_CROP = Build.VERSION.SDK_INT < Build.VERSION_CODES.GINGERBREAD_MR1;
     private static final int SIZE_DEFAULT = 2048;
     private static final int SIZE_LIMIT = 4096;
+
+    private static final String TAG = "CropImageActivity";
 
     private final Handler handler = new Handler();
 
@@ -437,18 +443,21 @@ public class CropImageActivity extends MonitoredActivity {
 
     private void saveOutput(Bitmap croppedImage) {
         if (saveUri != null) {
-            OutputStream outputStream = null;
-            try {
-                outputStream = getContentResolver().openOutputStream(saveUri);
-                if (outputStream != null) {
-                    croppedImage.compress(Bitmap.CompressFormat.JPEG, 90, outputStream);
-                }
-            } catch (IOException e) {
-                setResultException(e);
-                Log.e("Cannot open file: " + saveUri, e);
 
-            } finally {
-                CropUtil.closeSilently(outputStream);
+            File savedImageFile = new File(saveUri.getPath());
+            if (savedImageFile == null) {
+                android.util.Log.d(TAG,
+                        "Error creating media file, check storage permissions: ");// e.getMessage());
+                return;
+            }
+            try {
+                FileOutputStream fos = new FileOutputStream(savedImageFile);
+                croppedImage.compress(Bitmap.CompressFormat.PNG, 90, fos);
+                fos.close();
+            } catch (FileNotFoundException e) {
+                android.util.Log.d(TAG, "File not found: " + e.getMessage());
+            } catch (IOException e) {
+                android.util.Log.d(TAG, "Error accessing file: " + e.getMessage());
             }
 
             if (!IN_MEMORY_CROP) {
@@ -459,7 +468,7 @@ public class CropImageActivity extends MonitoredActivity {
                 );
             }
 
-            setResultUri(saveUri);
+            setResultUri(Uri.parse(savedImageFile.getAbsolutePath()));
         }
 
         final Bitmap b = croppedImage;
@@ -472,6 +481,8 @@ public class CropImageActivity extends MonitoredActivity {
 
         finish();
     }
+
+
 
     @Override
     protected void onDestroy() {
