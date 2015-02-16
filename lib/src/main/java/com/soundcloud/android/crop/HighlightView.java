@@ -28,8 +28,11 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
-import android.util.TypedValue;
+import android.text.TextPaint;
+import android.util.*;
 import android.view.View;
+
+import java.util.Locale;
 
 /*
  * Modified from version in AOSP.
@@ -39,7 +42,7 @@ import android.view.View;
  * image, another is screen. computeLayout() uses matrix to map from image
  * space to screen space.
  */
-class HighlightView {
+public class HighlightView {
 
     public static final int GROW_NONE        = (1 << 0);
     public static final int GROW_LEFT_EDGE   = (1 << 1);
@@ -48,7 +51,10 @@ class HighlightView {
     public static final int GROW_BOTTOM_EDGE = (1 << 4);
     public static final int MOVE             = (1 << 5);
 
-    private static final int DEFAULT_HIGHLIGHT_COLOR = 0xFF33B5E5;
+
+    private int minImageX;
+//    private static final int DEFAULT_HIGHLIGHT_COLOR = 0xFF33B5E5;
+    private static final int DEFAULT_HIGHLIGHT_COLOR = 0xFFFFFFFF;
     private static final float HANDLE_RADIUS_DP = 12f;
     private static final float OUTLINE_DP = 2f;
 
@@ -63,10 +69,13 @@ class HighlightView {
     private final Paint outsidePaint = new Paint();
     private final Paint outlinePaint = new Paint();
     private final Paint handlePaint = new Paint();
+    private final TextPaint smallTextPaint = new TextPaint();
 
     private View viewContext; // View displaying image
     private boolean showThirds;
     private int highlightColor;
+    private int invalidHighlightColor = 0xFFbd3f40;
+    private boolean tooSmall;
 
     private ModifyMode modifyMode = ModifyMode.None;
     private HandleMode handleMode = HandleMode.Changing;
@@ -86,13 +95,16 @@ class HighlightView {
         context.getTheme().resolveAttribute(R.attr.cropImageStyle, outValue, true);
         TypedArray attributes = context.obtainStyledAttributes(outValue.resourceId, R.styleable.CropImageView);
         try {
-            showThirds = attributes.getBoolean(R.styleable.CropImageView_showThirds, false);
-            highlightColor = attributes.getColor(R.styleable.CropImageView_highlightColor,
-                    DEFAULT_HIGHLIGHT_COLOR);
-            handleMode = HandleMode.values()[attributes.getInt(R.styleable.CropImageView_showHandles, 0)];
+//            showThirds = attributes.getBoolean(R.styleable.CropImageView_showThirds, false);
+//            highlightColor = attributes.getColor(R.styleable.CropImageView_highlightColor,
+//                    DEFAULT_HIGHLIGHT_COLOR);
+//            handleMode = HandleMode.values()[attributes.getInt(R.styleable.CropImageView_showHandles, 0)];
         } finally {
             attributes.recycle();
         }
+        showThirds = true;
+        highlightColor = DEFAULT_HIGHLIGHT_COLOR;
+        handleMode = HandleMode.Always;
     }
 
     public void setup(Matrix m, Rect imageRect, RectF cropRect, boolean maintainAspectRatio) {
@@ -105,12 +117,12 @@ class HighlightView {
         initialAspectRatio = this.cropRect.width() / this.cropRect.height();
         drawRect = computeLayout();
 
-        outsidePaint.setARGB(125, 50, 50, 50);
+        outsidePaint.setARGB(185, 50, 50, 50);
         outlinePaint.setStyle(Paint.Style.STROKE);
         outlinePaint.setAntiAlias(true);
         outlineWidth = dpToPx(OUTLINE_DP);
 
-        handlePaint.setColor(highlightColor);
+        handlePaint.setColor(DEFAULT_HIGHLIGHT_COLOR);
         handlePaint.setStyle(Paint.Style.FILL);
         handlePaint.setAntiAlias(true);
         handleRadius = dpToPx(HANDLE_RADIUS_DP);
@@ -144,11 +156,19 @@ class HighlightView {
             }
 
             canvas.restore();
+
+            if(tooSmall){
+                drawSmallText(canvas);
+            }
+
             canvas.drawPath(path, outlinePaint);
 
-            if (showThirds) {
+            if (showThirds && !tooSmall) {
                 drawThirds(canvas);
             }
+
+
+
 
             if (handleMode == HandleMode.Always ||
                     (handleMode == HandleMode.Changing && modifyMode == ModifyMode.Grow)) {
@@ -187,7 +207,6 @@ class HighlightView {
     private void drawHandles(Canvas canvas) {
         int xMiddle = drawRect.left + ((drawRect.right  - drawRect.left) / 2);
         int yMiddle = drawRect.top + ((drawRect.bottom - drawRect.top) / 2);
-
         canvas.drawCircle(drawRect.left, yMiddle, handleRadius, handlePaint);
         canvas.drawCircle(xMiddle, drawRect.top, handleRadius, handlePaint);
         canvas.drawCircle(drawRect.right, yMiddle, handleRadius, handlePaint);
@@ -195,7 +214,8 @@ class HighlightView {
     }
 
     private void drawThirds(Canvas canvas) {
-        outlinePaint.setStrokeWidth(1);
+        float strokeWidth = TypedValue.applyDimension(1, 1, viewContext.getResources().getDisplayMetrics());
+        outlinePaint.setStrokeWidth(strokeWidth);
         float xThird = (drawRect.right - drawRect.left) / 3;
         float yThird = (drawRect.bottom - drawRect.top) / 3;
         
@@ -209,6 +229,15 @@ class HighlightView {
                 drawRect.right, drawRect.top + yThird * 2, outlinePaint);
     }
 
+    private void drawSmallText(Canvas canvas){
+        canvas.drawRect(drawRect, outsidePaint);
+        smallTextPaint.setColor(DEFAULT_HIGHLIGHT_COLOR);
+        smallTextPaint.setTextSize(TypedValue.applyDimension(1, 16, viewContext.getResources().getDisplayMetrics()));
+        String text = viewContext.getResources().getString(R.string.too_small);
+        float textWidth = smallTextPaint.measureText(text);
+        canvas.drawText(text, (drawRect.centerX() - (textWidth / 2)), drawRect.centerY() + (TypedValue.applyDimension(1, 8, viewContext.getResources().getDisplayMetrics())), smallTextPaint);
+    }
+
     public void setMode(ModifyMode mode) {
         if (mode != modifyMode) {
             modifyMode = mode;
@@ -219,7 +248,7 @@ class HighlightView {
     // Determines which edges are hit by touching at (x, y)
     public int getHit(float x, float y) {
         Rect r = computeLayout();
-        final float hysteresis = 20F;
+        final float hysteresis = TypedValue.applyDimension(1, 20, viewContext.getResources().getDisplayMetrics());
         int retval = GROW_NONE;
 
         // verticalCheck makes sure the position is between the top and
@@ -298,6 +327,7 @@ class HighlightView {
 
     // Grows the cropping rectangle by (dx, dy) in image space.
     void growBy(float dx, float dy) {
+
         if (maintainAspectRatio) {
             if (dx != 0) {
                 dy = dx / initialAspectRatio;
@@ -323,7 +353,10 @@ class HighlightView {
             }
         }
 
+
+
         r.inset(-dx, -dy);
+
 
         // Don't let the cropping rectangle shrink too fast
         final float widthCap = 25F;
@@ -347,6 +380,14 @@ class HighlightView {
             r.offset(0F, imageRect.top - r.top);
         } else if (r.bottom > imageRect.bottom) {
             r.offset(0F, -(r.bottom - imageRect.bottom));
+        }
+
+        if(r.width() < minImageX){
+            highlightColor = invalidHighlightColor;
+            tooSmall = true;
+        } else {
+            highlightColor = DEFAULT_HIGHLIGHT_COLOR;
+            tooSmall = false;
         }
 
         cropRect.set(r);
@@ -381,4 +422,15 @@ class HighlightView {
         this.isFocused = isFocused;
     }
 
+    public int getMinImageX() {
+        return minImageX;
+    }
+
+    public void setMinImageX(int minImageX) {
+        this.minImageX = minImageX;
+    }
+
+    public boolean isTooSmall() {
+        return tooSmall;
+    }
 }

@@ -74,7 +74,8 @@ public class CropImageActivity extends MonitoredActivity {
     private int sampleSize;
     private RotateBitmap rotateBitmap;
     private CropImageView imageView;
-    private HighlightView cropView;
+    protected HighlightView cropView;
+    protected int minX;
 
     private boolean willOverrideView;
 
@@ -281,6 +282,7 @@ public class CropImageActivity extends MonitoredActivity {
                     if (imageView.highlightViews.size() == 1) {
                         cropView = imageView.highlightViews.get(0);
                         cropView.setFocus(true);
+                        cropView.setMinImageX(minX);
                     }
                 }
             });
