@@ -18,6 +18,7 @@ package com.soundcloud.android.crop;
 
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.database.Cursor;
 import android.media.ExifInterface;
 import android.net.Uri;
@@ -110,6 +111,12 @@ class CropUtil {
             }
         }
         return null;
+    }
+
+    public static File getFromMediaUri(Context context, Uri uri) {
+        if (uri == null) return null;
+
+        return FileUtil.getFile(context, uri);
     }
 
     public static void startBackgroundJob(MonitoredActivity activity,
