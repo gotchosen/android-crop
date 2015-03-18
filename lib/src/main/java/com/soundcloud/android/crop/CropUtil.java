@@ -68,7 +68,9 @@ class CropUtil {
     }
 
     public static boolean copyExifRotation(File sourceFile, File destFile) {
-        if (sourceFile == null || destFile == null) return false;
+        if (sourceFile == null || destFile == null) {
+            return false;
+        }
         try {
             ExifInterface exifSource = new ExifInterface(sourceFile.getAbsolutePath());
             ExifInterface exifDest = new ExifInterface(destFile.getAbsolutePath());
@@ -87,7 +89,7 @@ class CropUtil {
         if (SCHEME_FILE.equals(uri.getScheme())) {
             return new File(uri.getPath());
         } else if (SCHEME_CONTENT.equals(uri.getScheme())) {
-            final String[] filePathColumn = { MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME };
+            final String[] filePathColumn = {MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME};
             Cursor cursor = null;
             try {
                 cursor = resolver.query(uri, filePathColumn, null, null, null);
@@ -113,7 +115,7 @@ class CropUtil {
     }
 
     public static void startBackgroundJob(MonitoredActivity activity,
-            String title, String message, Runnable job, Handler handler) {
+                                          String title, String message, Runnable job, Handler handler) {
         // Make the progress dialog uncancelable, so that we can gurantee
         // the thread will be done before the activity getting destroyed
         ProgressDialog dialog = ProgressDialog.show(

@@ -25,11 +25,11 @@ import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.opengl.GLES10;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.provider.MediaStore;
 import android.view.View;
@@ -40,9 +40,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 
 /*
@@ -101,7 +98,7 @@ public class CropImageActivity extends MonitoredActivity {
     @Override
     public void setContentView(int layoutResID) {
         super.setContentView(layoutResID);
-        if(!willOverrideView){
+        if (!willOverrideView) {
             initActionViews();
             initImageView();
             finishOnCreate();
@@ -143,7 +140,6 @@ public class CropImageActivity extends MonitoredActivity {
     private void setupFromIntent() {
         Intent intent = getIntent();
         Bundle extras = intent.getExtras();
-
         if (extras != null) {
             aspectX = extras.getInt(Crop.Extra.ASPECT_X);
             aspectY = extras.getInt(Crop.Extra.ASPECT_Y);
@@ -155,7 +151,7 @@ public class CropImageActivity extends MonitoredActivity {
 
         sourceUri = intent.getData();
         if (sourceUri != null) {
-            exifRotation = CropUtil.getExifRotation(CropUtil.getFromMediaUri(getContentResolver(), sourceUri));
+            exifRotation = CropUtil.getExifRotation(FileUtilCrop.getFile(getApplicationContext(), sourceUri));
 
             InputStream is = null;
             try {
@@ -330,6 +326,10 @@ public class CropImageActivity extends MonitoredActivity {
         } else {
             try {
                 croppedImage = decodeRegionCrop(croppedImage, r);
+                if (exifRotation != 0) {
+                    croppedImage = ExifUtil.rotateBitmap(FileUtilCrop.getFile(getApplicationContext(), sourceUri), croppedImage);
+                }
+
             } catch (IllegalArgumentException e) {
                 setResultException(e);
                 finish();
@@ -337,7 +337,6 @@ public class CropImageActivity extends MonitoredActivity {
             }
 
             if (croppedImage != null) {
-                imageView.setImageRotateBitmapResetBase(new RotateBitmap(croppedImage, exifRotation), true);
                 imageView.center(true, true);
                 imageView.highlightViews.clear();
             }
@@ -371,19 +370,6 @@ public class CropImageActivity extends MonitoredActivity {
             BitmapRegionDecoder decoder = BitmapRegionDecoder.newInstance(is, false);
             final int width = decoder.getWidth();
             final int height = decoder.getHeight();
-
-            if (exifRotation != 0) {
-                // Adjust crop area to account for image rotation
-                Matrix matrix = new Matrix();
-                matrix.setRotate(-exifRotation);
-
-                RectF adjusted = new RectF();
-                matrix.mapRect(adjusted, new RectF(rect));
-
-                // Adjust to account for origin at 0,0
-                adjusted.offset(adjusted.left < 0 ? width : 0, adjusted.top < 0 ? height : 0);
-                rect = new Rect((int) adjusted.left, (int) adjusted.top, (int) adjusted.right, (int) adjusted.bottom);
-            }
 
             try {
                 croppedImage = decoder.decodeRegion(rect, new BitmapFactory.Options());
@@ -452,7 +438,7 @@ public class CropImageActivity extends MonitoredActivity {
             }
             try {
                 FileOutputStream fos = new FileOutputStream(savedImageFile);
-                croppedImage.compress(Bitmap.CompressFormat.PNG, 90, fos);
+                croppedImage.compress(Bitmap.CompressFormat.JPEG, 100, fos);
                 fos.close();
             } catch (FileNotFoundException e) {
                 android.util.Log.d(TAG, "File not found: " + e.getMessage());
@@ -462,10 +448,14 @@ public class CropImageActivity extends MonitoredActivity {
 
             if (!IN_MEMORY_CROP) {
                 // In-memory crop negates the rotation
-                CropUtil.copyExifRotation(
-                        CropUtil.getFromMediaUri(getContentResolver(), sourceUri),
-                        CropUtil.getFromMediaUri(getContentResolver(), saveUri)
-                );
+                //CropUtil.copyExifRotation(FileUtilCrop.getFile(getApplicationContext(), sourceUri), savedImageFile);
+                try {
+                    ExifInterface exifDest = new ExifInterface(FileUtilCrop.getFile(getApplicationContext(), sourceUri).getAbsolutePath());
+                    exifDest.setAttribute(ExifInterface.TAG_ORIENTATION, String.valueOf(ExifInterface.ORIENTATION_ROTATE_270));
+                    exifDest.saveAttributes();
+                } catch (IOException e) {
+                    Log.e("Error copying Exif data", e);
+                }
             }
 
             setResultUri(Uri.parse(savedImageFile.getAbsolutePath()));
@@ -481,8 +471,6 @@ public class CropImageActivity extends MonitoredActivity {
 
         finish();
     }
-
-
 
     @Override
     protected void onDestroy() {
