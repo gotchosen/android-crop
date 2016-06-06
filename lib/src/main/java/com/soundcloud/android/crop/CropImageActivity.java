@@ -40,6 +40,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.concurrent.CountDownLatch;
 
 /*
@@ -327,7 +328,7 @@ public class CropImageActivity extends MonitoredActivity {
             }
         } else {
             try {
-                croppedImage = decodeRegionCrop(croppedImage, r);
+                croppedImage = decodeRegionCrop(r, outWidth, outHeight);
                 if (exifRotation != 0) {
                     croppedImage = ExifUtil.rotateBitmap(FileUtilCrop.getFile(getApplicationContext(), sourceUri), croppedImage);
                 }
@@ -362,20 +363,40 @@ public class CropImageActivity extends MonitoredActivity {
     }
 
     @TargetApi(10)
-    private Bitmap decodeRegionCrop(Bitmap croppedImage, Rect rect) {
+    private Bitmap decodeRegionCrop(Rect rect, int outWidth, int outHeight) {
         // Release memory now
         clearImageView();
 
         InputStream is = null;
+        Bitmap croppedImage = null;
         try {
             is = getContentResolver().openInputStream(sourceUri);
             BitmapRegionDecoder decoder = BitmapRegionDecoder.newInstance(is, false);
             final int width = decoder.getWidth();
             final int height = decoder.getHeight();
 
-            try {
-                croppedImage = decoder.decodeRegion(rect, new BitmapFactory.Options());
+            if (exifRotation != 0) {
+                // Adjust crop area to account for image rotation
+                Matrix matrix = new Matrix();
+                matrix.setRotate(-exifRotation);
 
+                RectF adjusted = new RectF();
+                matrix.mapRect(adjusted, new RectF(rect));
+
+                // Adjust to account for origin at 0,0
+                adjusted.offset(adjusted.left < 0 ? width : 0, adjusted.top < 0 ? height : 0);
+                rect = new Rect((int) adjusted.left, (int) adjusted.top, (int) adjusted.right, (int) adjusted.bottom);
+            }
+
+            try {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inSampleSize = sampleSize;
+                croppedImage = decoder.decodeRegion(rect, options);
+                if (croppedImage != null && (rect.width() > outWidth || rect.height() > outHeight)) {
+                    Matrix matrix = new Matrix();
+                    matrix.postScale((float) outWidth / rect.width(), (float) outHeight / rect.height());
+                    croppedImage = Bitmap.createBitmap(croppedImage, 0, 0, croppedImage.getWidth(), croppedImage.getHeight(), matrix, true);
+                }
             } catch (IllegalArgumentException e) {
                 // Rethrow with some extra information
                 throw new IllegalArgumentException("Rectangle " + rect + " is outside of the image ("
@@ -384,7 +405,7 @@ public class CropImageActivity extends MonitoredActivity {
 
         } catch (IOException e) {
             Log.e("Error cropping image: " + e.getMessage(), e);
-            finish();
+            setResultException(e);
         } catch (OutOfMemoryError e) {
             Log.e("OOM cropping image: " + e.getMessage(), e);
             setResultException(e);
@@ -431,36 +452,26 @@ public class CropImageActivity extends MonitoredActivity {
 
     private void saveOutput(Bitmap croppedImage) {
         if (saveUri != null) {
-
-            File savedImageFile = new File(saveUri.getPath());
-            if (savedImageFile == null) {
-                android.util.Log.d(TAG,
-                        "Error creating media file, check storage permissions: ");// e.getMessage());
-                return;
-            }
+            OutputStream outputStream = null;
             try {
-                FileOutputStream fos = new FileOutputStream(savedImageFile);
-                croppedImage.compress(Bitmap.CompressFormat.JPEG, 100, fos);
-                fos.close();
-            } catch (FileNotFoundException e) {
-                android.util.Log.d(TAG, "File not found: " + e.getMessage());
-            } catch (IOException e) {
-                android.util.Log.d(TAG, "Error accessing file: " + e.getMessage());
-            }
-
-            if (!IN_MEMORY_CROP) {
-                // In-memory crop negates the rotation
-                //CropUtil.copyExifRotation(FileUtilCrop.getFile(getApplicationContext(), sourceUri), savedImageFile);
-                try {
-                    ExifInterface exifDest = new ExifInterface(FileUtilCrop.getFile(getApplicationContext(), sourceUri).getAbsolutePath());
-                    exifDest.setAttribute(ExifInterface.TAG_ORIENTATION, String.valueOf(ExifInterface.ORIENTATION_ROTATE_270));
-                    exifDest.saveAttributes();
-                } catch (IOException e) {
-                    Log.e("Error copying Exif data", e);
+                outputStream = getContentResolver().openOutputStream(saveUri);
+                if (outputStream != null) {
+                    croppedImage.compress(Bitmap.CompressFormat.JPEG, 90,
+                            outputStream);
                 }
+            } catch (IOException e) {
+                setResultException(e);
+                Log.e("Cannot open file: " + saveUri, e);
+            } finally {
+                CropUtil.closeSilently(outputStream);
             }
 
-            setResultUri(Uri.parse(savedImageFile.getAbsolutePath()));
+            CropUtil.copyExifRotation(
+                    CropUtil.getFromMediaUri(this, getContentResolver(), sourceUri),
+                    CropUtil.getFromMediaUri(this, getContentResolver(), saveUri)
+            );
+
+            setResultUri(saveUri);
         }
 
         final Bitmap b = croppedImage;
