@@ -155,6 +155,11 @@ public class CropImageActivity extends MonitoredActivity {
         if (sourceUri != null) {
             exifRotation = CropUtil.getExifRotation(FileUtilCrop.getFile(getApplicationContext(), sourceUri));
 
+            CropUtil.copyExifRotation(
+                    CropUtil.getFromMediaUri(this, getContentResolver(), sourceUri),
+                    CropUtil.getFromMediaUri(this, getContentResolver(), saveUri)
+            );
+
             InputStream is = null;
             try {
                 sampleSize = calculateBitmapSampleSize(sourceUri);
@@ -466,10 +471,10 @@ public class CropImageActivity extends MonitoredActivity {
                 CropUtil.closeSilently(outputStream);
             }
 
-            CropUtil.copyExifRotation(
-                    CropUtil.getFromMediaUri(this, getContentResolver(), sourceUri),
-                    CropUtil.getFromMediaUri(this, getContentResolver(), saveUri)
-            );
+//            CropUtil.copyExifRotation(
+//                    CropUtil.getFromMediaUri(this, getContentResolver(), sourceUri),
+//                    CropUtil.getFromMediaUri(this, getContentResolver(), saveUri)
+//            );
 
             setResultUri(saveUri);
         }
